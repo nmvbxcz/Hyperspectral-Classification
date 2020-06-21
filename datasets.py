@@ -243,7 +243,7 @@ class HyperX(torch.utils.data.Dataset):
         elif supervision == 'semi':
             mask = np.ones_like(gt)             # 所有类别都为1的mask位图
         x_pos, y_pos = np.nonzero(mask)
-        p = self.patch_size // 2                # 将所有x和y组合后建立数组，排除填充边界，然后乱序
+        p = self.patch_size // 2                # 将所有x和y组合后建立数组，排除填充边界，然后乱序 （patch_size是卷积核大小，xy是含padding的坐标）
         self.indices = np.array([(x,y) for x,y in zip(x_pos, y_pos) if x > p and x < data.shape[0] - p and y > p and y < data.shape[1] - p])
         self.labels = [self.label[x,y] for x,y in self.indices]
         np.random.shuffle(self.indices)
@@ -281,12 +281,12 @@ class HyperX(torch.utils.data.Dataset):
         return len(self.indices)
 
     def __getitem__(self, i):
-        x, y = self.indices[i]
-        x1, y1 = x - self.patch_size // 2, y - self.patch_size // 2
-        x2, y2 = x1 + self.patch_size, y1 + self.patch_size
+        x, y = self.indices[i]      # xy是某一组含padding的坐标
+        x1, y1 = x - self.patch_size // 2, y - self.patch_size // 2     # x1y1是卷积核起始的坐标值
+        x2, y2 = x1 + self.patch_size, y1 + self.patch_size             # x2y2是卷积核结束的坐标值
 
-        data = self.data[x1:x2, y1:y2]
-        label = self.label[x1:x2, y1:y2]
+        data = self.data[x1:x2, y1:y2]                                  # 卷积原始数据方块
+        label = self.label[x1:x2, y1:y2]                                # 原始数据方块对应的标签方块（非单个值）
 
         if self.flip_augmentation and self.patch_size > 1:
             # Perform data augmentation (only on 2D patches)
@@ -297,7 +297,7 @@ class HyperX(torch.utils.data.Dataset):
                 data = self.mixture_noise(data, label)
 
         # Copy the data into numpy arrays (PyTorch doesn't like numpy views)
-        data = np.asarray(np.copy(data).transpose((2, 0, 1)), dtype='float32')
+        data = np.asarray(np.copy(data).transpose((2, 0, 1)), dtype='float32')     # 数据变为了【光谱×行×列】
         label = np.asarray(np.copy(label), dtype='int64')
 
         # Load the data into PyTorch tensors
@@ -305,14 +305,14 @@ class HyperX(torch.utils.data.Dataset):
         label = torch.from_numpy(label)
         # Extract the center label if needed
         if self.center_pixel and self.patch_size > 1:
-            label = label[self.patch_size // 2, self.patch_size // 2]
+            label = label[self.patch_size // 2, self.patch_size // 2]   # 将标签方块中心值作为最终label
         # Remove unused dimensions when we work with invidual spectrums
-        elif self.patch_size == 1:
+        elif self.patch_size == 1:      # 如果非数据块，则转为单点数据和标签
             data = data[:, 0, 0]
             label = label[0, 0]
 
         # Add a fourth dimension for 3D CNN
         if self.patch_size > 1:
             # Make 4D data ((Batch x) Planes x Channels x Width x Height)
-            data = data.unsqueeze(0)
+            data = data.unsqueeze(0)    # 进行维度扩充
         return data, label
