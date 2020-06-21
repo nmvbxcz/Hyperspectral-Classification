@@ -75,7 +75,7 @@ class TqdmUpTo(tqdm):
         self.update(b * bsize - self.n)  # will also set self.n = b * bsize
 
 
-def get_dataset(dataset_name, target_folder="./", datasets=DATASETS_CONFIG):
+def get_dataset(dataset_name, target_folder="./", datasets=DATASETS_CONFIG):        # 获取图像数据
     """ Gets the dataset specified by name and return the related components.
     Args:
         dataset_name: string with the name of the dataset
@@ -201,7 +201,7 @@ def get_dataset(dataset_name, target_folder="./", datasets=DATASETS_CONFIG):
     ignored_labels = list(set(ignored_labels))
     # Normalization
     img = np.asarray(img, dtype='float32')
-    #img = (img - np.min(img)) / (np.max(img) - np.min(img))
+    #img = (img - np.min(img)) / (np.max(img) - np.min(img))                # 数据归一化
     data = img.reshape(np.prod(img.shape[:2]), np.prod(img.shape[2:]))
     #data = preprocessing.scale(data)
     data  = preprocessing.minmax_scale(data)
@@ -237,13 +237,13 @@ class HyperX(torch.utils.data.Dataset):
         # Fully supervised : use all pixels with label not ignored
         if supervision == 'full':
             mask = np.ones_like(gt)
-            for l in self.ignored_labels:
+            for l in self.ignored_labels:       # 制作所有0类为0的mask位图
                 mask[gt == l] = 0
         # Semi-supervised : use all pixels, except padding
         elif supervision == 'semi':
-            mask = np.ones_like(gt)
+            mask = np.ones_like(gt)             # 所有类别都为1的mask位图
         x_pos, y_pos = np.nonzero(mask)
-        p = self.patch_size // 2
+        p = self.patch_size // 2                # 将所有x和y组合后建立数组，排除填充边界，然后乱序
         self.indices = np.array([(x,y) for x,y in zip(x_pos, y_pos) if x > p and x < data.shape[0] - p and y > p and y < data.shape[1] - p])
         self.labels = [self.label[x,y] for x,y in self.indices]
         np.random.shuffle(self.indices)
