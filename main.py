@@ -284,12 +284,12 @@ for run in range(N_RUNS):
         # Split train set in train/val
         train_gt, val_gt = sample_gt(train_gt, 0.95, mode='random')
         # Generate the dataset
-        train_dataset = HyperX(img, train_gt, **hyperparams)
+        train_dataset = HyperX(img, train_gt, **hyperparams)				 # 生成用于训练的数据方块和标签
         train_loader = data.DataLoader(train_dataset,
                                        batch_size=hyperparams['batch_size'],
                                        #pin_memory=hyperparams['device'],
                                        shuffle=True)
-        val_dataset = HyperX(img, val_gt, **hyperparams)
+        val_dataset = HyperX(img, val_gt, **hyperparams)				 # 生成用于测试的数据方块和标签					
         val_loader = data.DataLoader(val_dataset,
                                      #pin_memory=hyperparams['device'],
                                      batch_size=hyperparams['batch_size'])
