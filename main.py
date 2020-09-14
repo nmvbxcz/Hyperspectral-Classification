@@ -24,6 +24,7 @@ import numpy as np
 import sklearn.svm
 import sklearn.model_selection
 from skimage import io
+from scipy import sio
 # Visualization
 import seaborn as sns
 import visdom
