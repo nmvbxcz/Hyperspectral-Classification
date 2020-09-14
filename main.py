@@ -206,6 +206,8 @@ if DATAVIZ:
     plot_spectrums(mean_spectrums, viz, title='Mean spectrum/class')
 
 results = []
+train_iter = np.pad(sio.loadmat('train.mat')['train_index'], (12, 12), 'constant', constant_values=(0, 0))
+test_iter = np.pad(sio.loadmat('test.mat')['test_index'], (12, 12), 'constant', constant_values=(0, 0))
 # run the experiment several times
 for run in range(N_RUNS):
     if TRAIN_GT is not None and TEST_GT is not None:
@@ -220,7 +222,11 @@ for run in range(N_RUNS):
         test_gt = open_file(TEST_GT)
     else:
 	# Sample random training spectra
-        train_gt, test_gt = sample_gt(gt, SAMPLE_PERCENTAGE, mode=SAMPLING_MODE)
+	train_gt = np.zeros_like(gt)
+    	train_gt[train_iter[:, :, run] == 0] = 0
+    	test_gt = np.zeros_like(gt)
+    	test_gt[test_iter[:, :, run] == 0] = 0
+#         train_gt, test_gt = sample_gt(gt, SAMPLE_PERCENTAGE, mode=SAMPLING_MODE)
     print("{} samples selected (over {})".format(np.count_nonzero(train_gt),
                                                  np.count_nonzero(gt)))
     print("Running an experiment with the {} model".format(MODEL),
