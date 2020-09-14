@@ -73,6 +73,26 @@ def get_model(name, **kwargs):
         criterion = nn.CrossEntropyLoss(weight=kwargs['weights'])
         kwargs.setdefault('epoch', 400)
         kwargs.setdefault('batch_size', 100)
+    elif name == 'sw_simple':
+        patch_size = kwargs.setdefault('patch_size', 25)
+        center_pixel = True
+        model = Sw_Box(n_bands, n_classes, patch_size=patch_size)
+        lr = kwargs.setdefault('learning_rate', 0.01)
+        optimizer = optim.SGD(model.parameters(), lr=lr)
+        criterion = nn.CrossEntropyLoss(weight=kwargs['weights'])
+        kwargs.setdefault('epoch', 100)
+        kwargs.setdefault('batch_size', 8)
+        print('parameters_count:', count_parameters(model))
+    elif name == 'sw':
+        patch_size = kwargs.setdefault('patch_size', 25)
+        center_pixel = True
+        model = Sw_Box(n_bands, n_classes, patch_size=patch_size)
+        lr = kwargs.setdefault('learning_rate', 0.01)
+        optimizer = optim.SGD(model.parameters(), lr=lr)
+        criterion = nn.CrossEntropyLoss(weight=kwargs['weights'])
+        kwargs.setdefault('epoch', 100)
+        kwargs.setdefault('batch_size', 8)
+        print('parameters_count:', count_parameters(model))
     elif name == 'li':
         patch_size = kwargs.setdefault('patch_size', 5)
         center_pixel = True
@@ -183,6 +203,243 @@ def get_model(name, **kwargs):
     kwargs['center_pixel'] = center_pixel
     return model, optimizer, criterion, kwargs
 
+class Sw_Box_simple(nn.Module):
+    """
+    DEEP FEATURE EXTRACTION AND CLASSIFICATION OF HYPERSPECTRAL IMAGES BASED ON
+                        CONVOLUTIONAL NEURAL NETWORKS
+    Yushi Chen, Hanlu Jiang, Chunyang Li, Xiuping Jia and Pedram Ghamisi
+    IEEE Transactions on Geoscience and Remote Sensing (TGRS), 2017
+    """
+    @staticmethod
+    def weight_init(m):
+        # In the beginning, the weights are randomly initialized
+        # with standard deviation 0.001
+        if isinstance(m, nn.Linear) or isinstance(m, nn.Conv3d):
+            init.normal_(m.weight, std=0.001)
+            init.zeros_(m.bias)
+
+    def __init__(self, input_channels, n_classes, patch_size=25, n_planes=32):
+        super(Sw_Box, self).__init__()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.input_channels = input_channels
+        self.n_planes = n_planes
+        self.patch_size = patch_size
+
+        self.sa = SpatialAttention()
+
+        # self.conv1_w = nn.Parameter(torch.empty(input_channels, 5, 5))
+        # init.normal_(self.conv1_w, std=0.001)
+        # self.conv1_b = nn.Parameter(torch.empty(n_planes))
+        # init.zeros_(self.conv1_b)
+        self.conv1_out = 16
+        self.conv2_out = 24
+        self.conv3_out = 32
+        self.conv4_out = 48
+
+        self.conv0 = nn.Conv2d(input_channels, self.conv1_out, (1, 1), stride=(1, 1))
+        self.bn1 = nn.BatchNorm2d(self.conv1_out)
+        self.bn2 = nn.BatchNorm2d(self.conv2_out)
+        self.pool1 = nn.MaxPool2d((2,2),(1,1))
+        self.pool2 = nn.MaxPool2d((2, 2), (2, 2))
+        self.conv1 = nn.Conv2d(self.conv1_out, self.conv2_out, (3, 3), stride=(1, 1))
+        self.conv2 = nn.Conv2d(self.conv2_out, self.conv3_out, (5, 5), stride=(1, 1))
+
+
+        self.features_size = self._get_final_flattened_size()
+
+        self.fc = nn.Linear(self.features_size, n_classes)
+
+        self.dropout = nn.Dropout(p=0.5)
+
+        self.apply(self.weight_init)
+
+    def _get_final_flattened_size(self):
+        with torch.no_grad():
+            x = torch.zeros(1, self.conv1_out, self.patch_size, self.patch_size)
+            x = self.conv1(x)
+            x = self.pool1(x)
+            x = self.pool2(x)
+            x = self.conv2(x)
+            _, c, w, h = x.size()
+        return c * w * h
+
+    def forward(self, x):
+        radius = math.floor(self.patch_size/2)
+        half_r = math.floor(radius / 2)
+        x = F.relu(self.conv0(x))
+        x = self.bn1(x)
+        x = F.relu(self.conv1(x))
+        x = self.bn2(x)
+        x = self.pool1(x)
+        x = self.pool2(x)
+        x = F.relu(self.conv2(x))
+
+
+        # eight = torch.cat((centerpoint, lu_, ru_, ld_, rd_, up_, down_, left_, right_), -2)
+        # eight = self.sa(eight) * eight
+        # eight_ = F.relu(self.conv5(eight))
+
+        x = x.view(-1, self.features_size)
+        x = self.fc(x)
+        return x
+  
+class Sw_Box(nn.Module):
+    """
+    DEEP FEATURE EXTRACTION AND CLASSIFICATION OF HYPERSPECTRAL IMAGES BASED ON
+                        CONVOLUTIONAL NEURAL NETWORKS
+    Yushi Chen, Hanlu Jiang, Chunyang Li, Xiuping Jia and Pedram Ghamisi
+    IEEE Transactions on Geoscience and Remote Sensing (TGRS), 2017
+    """
+    @staticmethod
+    def weight_init(m):
+        # In the beginning, the weights are randomly initialized
+        # with standard deviation 0.001
+        if isinstance(m, nn.Linear) or isinstance(m, nn.Conv3d):
+            init.normal_(m.weight, std=0.001)
+            init.zeros_(m.bias)
+
+    def __init__(self, input_channels, n_classes, patch_size=25, n_planes=32):
+        super(Sw_Box, self).__init__()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.input_channels = input_channels
+        self.n_planes = n_planes
+        self.patch_size = patch_size
+
+        self.sa = SpatialAttention()
+
+        # self.conv1_w = nn.Parameter(torch.empty(input_channels, 5, 5))
+        # init.normal_(self.conv1_w, std=0.001)
+        # self.conv1_b = nn.Parameter(torch.empty(n_planes))
+        # init.zeros_(self.conv1_b)
+        self.conv1_out = 16
+        self.conv2_out = 24
+        self.conv3_out = 32
+        self.conv4_out = 48
+
+        self.conv0 = nn.Conv2d(input_channels, self.conv1_out, (1, 1), stride=(1, 1))
+        self.bn1 = nn.BatchNorm2d(self.conv1_out)
+        self.bn2 = nn.BatchNorm2d(self.conv2_out)
+        self.bn3 = nn.BatchNorm2d(self.conv3_out)
+        self.pool1 = nn.MaxPool2d((2,2),(1,1))
+        self.pool2 = nn.MaxPool2d((2, 2), (2, 2))
+        self.conv1 = nn.Conv2d(self.conv1_out, self.conv2_out, (3, 3), stride=(1, 1))
+        self.conv2 = nn.Conv2d(self.conv1_out, self.conv2_out, (3, 3), stride=(1, 1))
+        self.conv3 = nn.Conv2d(self.conv2_out, self.conv3_out, (5, 5), stride=(1, 1))
+        self.conv4 = nn.Conv2d(self.conv2_out, self.conv3_out, (5, 5), stride=(1, 1))
+        self.conv5 = nn.Conv2d(self.conv3_out, self.conv4_out, (9, 1))
+        self.conv6 = nn.Conv2d(self.conv1_out, self.conv3_out, (1, 1))
+
+        self.features_size = self._get_final_flattened_size()
+
+        self.fc = nn.Linear(self.features_size, n_classes)
+
+        self.dropout = nn.Dropout(p=0.5)
+
+        self.apply(self.weight_init)
+
+    def _get_final_flattened_size(self):
+        with torch.no_grad():
+            x = torch.zeros(1, self.conv1_out,
+                             math.floor(self.patch_size/2)+1, math.floor(self.patch_size/2)+1)
+            x = self.conv1(x)
+            x = self.pool1(x)
+            x = self.pool2(x)
+            x = self.conv3(x)
+            x = torch.cat((x,x,x,x,x,x,x,x,x),-2)
+            x = self.conv5(x)
+            _, c, w, h = x.size()
+        return c * w * h
+
+    def forward(self, x):
+
+        # indices1 = torch.arange(0, 13).to(self.device)
+        # indices2 = torch.arange(12, 25).to(self.device)
+        # indices3 = torch.arange(6, 19).to(self.device)
+        # lu = F.relu(self.conv1(x.index_select(-2,indices1).index_select(-1,indices1)))
+        # ru = F.relu(self.conv1(x.index_select(-2,indices1).index_select(-1,indices2)))
+        # ld = F.relu(self.conv1(x.index_select(-2,indices2).index_select(-1,indices1)))
+        # rd = F.relu(self.conv1(x.index_select(-2,indices2).index_select(-1,indices2)))
+        # up = F.relu(self.conv2(x.index_select(-2,indices1).index_select(-1,indices3)))
+        # down = F.relu(self.conv2(x.index_select(-2,indices2).index_select(-1,indices3)))
+        # left = F.relu(self.conv2(x.index_select(-2,indices3).index_select(-1,indices1)))
+        # right = F.relu(self.conv2(x.index_select(-2,indices3).index_select(-1,indices2)))
+
+        # xx = x[:, :, :, 0:13, 0:13].squeeze()
+        # xx = nn.functional.conv3d(x[:, :, :, 0:13, 0:13], self.conv1_w, self.conv1_b, stride=(0,2,2)))
+
+        radius = math.floor(self.patch_size/2)
+        half_r = math.floor(radius / 2)
+        x = F.relu(self.conv0(x))
+        x = self.bn1(x)
+        lu = F.relu(self.conv1(x[:, :, 0:radius+1, 0:radius+1]))                                   # 左上方
+        lu = self.bn2(lu)
+        lu = self.pool1(lu)
+        lu = self.pool2(lu)
+        ru = F.relu(self.conv1(torch.rot90(x[:, :, 0:radius+1, radius:self.patch_size], 1, [-2, -1])))        # 右上方
+        ru = self.bn2(ru)
+        ru = self.pool1(ru)
+        ru = self.pool2(ru)
+        ld = F.relu(self.conv1(torch.rot90(x[:, :, radius:self.patch_size, 0:radius+1], -1, [-2, -1])))       # 左下方
+        ld = self.bn2(ld)
+        ld = self.pool1(ld)
+        ld = self.pool2(ld)
+        rd = F.relu(self.conv1(torch.rot90(x[:, :, radius:self.patch_size, radius:self.patch_size], 2, [-2, -1])))       # 右下方
+        rd = self.bn2(rd)
+        rd = self.pool1(rd)
+        rd = self.pool2(rd)
+        up = F.relu(self.conv2(x[:, :, 0:radius+1, radius-half_r:radius+half_r+1]))                                   # 正上方
+        up = self.bn2(up)
+        up = self.pool1(up)
+        up = self.pool2(up)
+        down = F.relu(self.conv2(torch.rot90(x[:, :, radius:self.patch_size, radius-half_r:radius+half_r+1], 2, [-2, -1])))      # 正下方
+        down = self.bn2(down)
+        down = self.pool1(down)
+        down = self.pool2(down)
+        left = F.relu(self.conv2(torch.rot90(x[:, :, radius-half_r:radius+half_r+1, 0:radius+1], -1, [-2, -1])))      # 正左方
+        left = self.bn2(left)
+        left = self.pool1(left)
+        left = self.pool2(left)
+        right = F.relu(self.conv2(torch.rot90(x[:, :, radius-half_r:radius+half_r+1, radius:self.patch_size], 1, [-2, -1])))     # 正右方
+        right = self.bn2(right)
+        right = self.pool1(right)
+        right = self.pool2(right)
+
+        lu_ = F.relu(self.conv3(lu))
+        lu_ = self.bn3(lu_)
+
+        ru_ = F.relu(self.conv3(ru))
+        ru_ = self.bn3(ru_)
+        ru_ = self.dropout(ru_)
+        ld_ = F.relu(self.conv3(ld))
+        ld_ = self.bn3(ld_)
+        ld_ = self.dropout(ld_)
+        rd_ = F.relu(self.conv3(rd))
+        rd_ = self.bn3(rd_)
+        rd_ = self.dropout(rd_)
+        up_ = F.relu(self.conv4(up))
+        up_ = self.bn3(up_)
+        up_ = self.dropout(up_)
+        down_ = F.relu(self.conv4(down))
+        down_ = self.bn3(down_)
+        down_ = self.dropout(down_)
+        left_ = F.relu(self.conv4(left))
+        left_ = self.bn3(left_)
+        left_ = self.dropout(left_)
+        right_ = F.relu(self.conv4(right))
+        right_ = self.bn3(right_)
+        right_ = self.dropout(right_)
+        x_c = x[:, :, 12, 12].unsqueeze(-1).unsqueeze(-1)
+        centerpoint = F.relu(self.conv6(x_c))
+        # indices = torch.LongTensor([12]).to(self.device)
+        # centerpoint = F.relu(self.conv6(x.index_select(-2, indices).index_select(-1, indices)))
+        eight = torch.cat((centerpoint, lu_, ru_, ld_, rd_, up_, down_, left_, right_), -2)
+        eight = self.sa(eight) * eight
+        eight_ = F.relu(self.conv5(eight))
+
+        x = eight_.view(-1, self.features_size)
+        x = self.fc(x)
+        return x
+  
 
 class Baseline(nn.Module):
     """
